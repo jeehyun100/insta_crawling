@@ -27,9 +27,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 # HOST
 HOST = 'https://www.instagram.com'
-
+#_1cr2e
 # SELENIUM CSS SELECTOR
 CSS_LOAD_MORE = "a._1cr2e._epyes"
+CLASS_LOAD_MORE = "_1cr2e._epyes"
 #CSS_RIGHT_ARROW = "a[class='_de018 coreSpriteRightPaginationArrow']"
 CSS_RIGHT_ARROW = "a[class='_3a693 coreSpriteRightPaginationArrow']"
 #FIREFOX_FIRST_POST_PATH = "//div[contains(@class, '_8mlbc _vbtk2 _t5r8b')]"
@@ -176,12 +177,16 @@ class InstagramCrawler(object):
         print("posts: {}, number: {}".format(num_of_posts, number))
         number = number if number < num_of_posts else num_of_posts
 
+        #another way
+        element = self._driver.find_element_by_class_name('_1cr2e._epyes')
+        self._driver.execute_script("arguments[0].click();", element)
+
         # scroll page until reached
-        loadmore = WebDriverWait(self._driver, 10).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, CSS_LOAD_MORE))
-        )
-        loadmore.click()
+        # loadmore = WebDriverWait(self._driver, 10).until(
+        #     EC.presence_of_element_located(
+        #         (By.CSS_SELECTOR, CSS_LOAD_MORE))
+        # )
+        # loadmore.click()
 
         num_to_scroll = int((number - 12) / 12) + 1
         for _ in range(num_to_scroll):
