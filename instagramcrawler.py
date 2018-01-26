@@ -33,6 +33,7 @@ CSS_LOAD_MORE = "a._1cr2e._epyes"
 CLASS_LOAD_MORE = "_1cr2e._epyes"
 #CSS_RIGHT_ARROW = "a[class='_de018 coreSpriteRightPaginationArrow']"
 CSS_RIGHT_ARROW = "a[class='_3a693 coreSpriteRightPaginationArrow']"
+CSS_DETAIL_POPUP ="div._mck9w._gvoze._f2mse"
 #FIREFOX_FIRST_POST_PATH = "//div[contains(@class, '_8mlbc _vbtk2 _t5r8b')]"
 #FIREFOX_FIRST_POST_PATH = "//div[contains(@class, '_mck9w _gvoze _f2mse')]"
 FIREFOX_FIRST_POST_PATH = "//div[contains(@class, '_mck9w')]"
@@ -168,7 +169,9 @@ class InstagramCrawler(object):
 
     def scroll_to_num_of_posts(self, number):
         # Get total number of posts of page
-        num_of_posts = re.search(r'"_fd86t"\>(\,?\d+\,?\d+)',
+        #num_of_posts = re.search(r'"_fd86t"\>(\,?\d+\,?\d+)',
+        #                     self._driver.page_source).group(1)
+        num_of_posts = re.search(r'"_fd86t.{0,7}"\>(\,?\d+\,?\d+)',
                              self._driver.page_source).group(1)
         #num_info = re.search(r'\], "count": \d+',
         #                     self._driver.page_source).group()
@@ -178,7 +181,8 @@ class InstagramCrawler(object):
         number = number if number < num_of_posts else num_of_posts
 
         #another way
-        element = self._driver.find_element_by_class_name('_1cr2e._epyes')
+        #element = self._driver.find_element_by_class_name('_1cr2e._epyes')
+        element = self._driver.find_element_by_css_selector("._1cr2e")
         self._driver.execute_script("arguments[0].click();", element)
 
         # scroll page until reached
@@ -191,9 +195,9 @@ class InstagramCrawler(object):
         num_to_scroll = int((number - 12) / 12) + 1
         for _ in range(num_to_scroll):
             self._driver.execute_script(SCROLL_DOWN)
-            time.sleep(0.2)
+            time.sleep(0.5)
             self._driver.execute_script(SCROLL_UP)
-            time.sleep(0.2)
+            time.sleep(0.5)
 
     def scrape_photo_links(self, number, is_hashtag=False):
         print("Scraping photo links...")
@@ -216,30 +220,74 @@ class InstagramCrawler(object):
             sys.stdout.write("\033[F")
             print("Scraping captions {} / {}".format(post_num+1,number))
             if post_num == 0:  # Click on the first post
-                # Chrome
-                self._driver.find_element_by_class_name('_mck9w').click()
-                #self._driver.find_element_by_xpath(
-                #    FIREFOX_FIRST_POST_PATH).click()
-
-                if number != 1:  #
-                    WebDriverWait(self._driver, 5).until(
+                # should wait for loading
+                # another way
+                #next_element = self._driver.find_element_by_class_name('_mck9w')
+                #self._driver.execute_script("arguments[0].click();", next_element)
+                try:
+                    WebDriverWait(self._driver, 100).until(
                         EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, CSS_RIGHT_ARROW)
+                            (By.CSS_SELECTOR, CSS_DETAIL_POPUP)))
+                except TimeoutException:
+                    print("Show detail {}".format(post_num))
+                    break
+
+                try:
+                    WebDriverWait(self._driver, 100).until(
+                        EC.presence_of_element_located(
+                            (By.CSS_SELECTOR, "div._70iju:nth-child(1) > div:nth-child(1)")
                         )
                     )
+                except TimeoutException:
+                    print("Show detail2 {}".format(post_num))
+                    break
+
+                #
+                time.sleep(1)
+                popup = self._driver.find_element_by_css_selector(
+                    "div._70iju:nth-child(1) > div:nth-child(1)").click()
+
+
+                if number != 1:  #
+                    # WebDriverWait(self._driver, 100).until(
+                    #     EC.presence_of_element_located(
+                    #         (By.CSS_SELECTOR, "._3a693")
+                    #     )
+                    # )
+                    try:
+                        WebDriverWait(self._driver, 1).until(
+                            EC.presence_of_element_located(
+                                (By.CSS_SELECTOR, CSS_RIGHT_ARROW)
+                            )
+                        )
+                    except:
+                        popup = self._driver.find_element_by_css_selector(
+                            "div._70iju:nth-child(1) > div:nth-child(1)").click()
+
+
 
             elif number != 1:  # Click Right Arrow to move to next post
                 url_before = self._driver.current_url
-                self._driver.find_element_by_css_selector(
-                    CSS_RIGHT_ARROW).click()
+
+                right_arrow = WebDriverWait(self._driver, 100).until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, CSS_RIGHT_ARROW)
+                    )
+                )
+                right_arrow.click()
+
+                #
+                # self._driver.find_element_by_css_selector(
+                #     CSS_RIGHT_ARROW).click()
 
                 # Wait until the page has loaded
-                try:
-                    WebDriverWait(self._driver, 10).until(
-                        url_change(url_before))
-                except TimeoutException:
-                    print("Time out in caption scraping at number {}".format(post_num))
-                    break
+
+                # try:
+                #     WebDriverWait(self._driver, 20).until(
+                #         url_change(url_before))
+                # except TimeoutException:
+                #     print("Time out in caption scraping at number {}".format(post_num))
+                #     break
 
             # Parse caption
             try:
@@ -356,7 +404,7 @@ def main():
                         help='Number of posts to download: integer')
     parser.add_argument('-c', '--caption', action='store_true', default=True,
                         help='Add this flag to download caption when downloading photos')
-    parser.add_argument('-l', '--headless', action='store_true',
+    parser.add_argument('-l', '--headless', default=True, action='store_true',
                         help='If set, will use PhantomJS driver to run script as headless')
     parser.add_argument('-a', '--authentication', type=str, default=None,
                         help='path to authentication json file')
