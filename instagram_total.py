@@ -73,25 +73,22 @@ class InstagramCrawler(object):
     def __init__(self, headless=True, firefox_path=None, firefox=True):
         if headless:
             print("headless mode on")
-            #self._driver = webdriver.PhantomJS()
-            #self._driver = webdriver.PhantomJS('/home/hyunsh/insta_crawling/phantomjs-2.1.3/phantomjs')
+
             options = webdriver.ChromeOptions()
             options.add_argument('headless')
             options.add_argument('window-size=1920x1080')
             options.add_argument("disable-gpu")
 
-            # binary = FirefoxBinary(firefox_path)
             self._driver = webdriver.Chrome('/home/hyunsh/insta_crawling/chrome/chromedriver', chrome_options=options)
         else:
             if firefox :
-            # credit to https://github.com/SeleniumHQ/selenium/issues/3884#issuecomment-296990844
+
                 binary = FirefoxBinary(firefox_path)
                 self._driver = webdriver.Firefox(firefox_binary=binary)
             else:
-                #binary = FirefoxBinary(firefox_path)
+
                 self._driver = webdriver.Chrome('/home/hyunsh/insta_crawling/chrome/chromedriver')
 
-        #self._driver.implicitly_wait(10)
         self.data = defaultdict(list)
 
     def login(self, authentication=None):
@@ -175,13 +172,10 @@ class InstagramCrawler(object):
         else:  # Browse user page
             relative_url = query
 
-        #target_url = urljoin(HOST, relative_url)
-        #target_url = "http://www.instagram.com/instagram/"
-
-        #target_url = "https://www.instagram.com/jiweon501/"
         target_url = urljoin(HOST, relative_url)
 
         self._driver.get(target_url)
+        return self
 
     def scroll_to_num_of_posts(self, number):
         # Get total number of posts of page
@@ -197,26 +191,17 @@ class InstagramCrawler(object):
 
         num_of_posts = _num_of_posts.text
 
-        # num_of_posts = re.search(r'"_fd86t.{0,7}"\>(\,?\d+\,?\d+)',
-        #                      self._driver.page_source).group(1)
-        #num_info = re.search(r'\], "count": \d+',
-        #                     self._driver.page_source).group()
+
         num_of_posts = int(num_of_posts.replace(',',''))
-        #num_of_posts = int(re.findall(r'\d+', num_info)[0])
+
         print("posts: {}, number: {}".format(num_of_posts, number))
         number = number if number < num_of_posts else num_of_posts
 
-        #another way
-        #element = self._driver.find_element_by_class_name('_1cr2e._epyes')
+
         element = self._driver.find_element_by_css_selector("._1cr2e")
         self._driver.execute_script("arguments[0].click();", element)
 
-        # scroll page until reached
-        # loadmore = WebDriverWait(self._driver, 10).until(
-        #     EC.presence_of_element_located(
-        #         (By.CSS_SELECTOR, CSS_LOAD_MORE))
-        # )
-        # loadmore.click()
+
 
         num_to_scroll = int((number - 12) / 12) + 1
         for _ in range(num_to_scroll):
@@ -224,6 +209,7 @@ class InstagramCrawler(object):
             time.sleep(0.5)
             self._driver.execute_script(SCROLL_UP)
             time.sleep(0.5)
+        return self
 
     def scrape_photo_links(self, number, is_hashtag=False):
         print("Scraping photo links...")
@@ -237,6 +223,7 @@ class InstagramCrawler(object):
         begin = 0 if is_hashtag else 1
 
         self.data['photo_links'] = photo_links[begin:number + begin]
+        return self
 
     def click_and_scrape_captions(self, number):
         print("Scraping captions...")
@@ -417,6 +404,7 @@ class InstagramCrawler(object):
         print(id_mtime_row)
         df = pd.DataFrame(id_mtime_row, columns=['id', 'ModifyDatetime'])
         df.to_csv("Main_crawling.csv")
+        return self
 
 
     def scrape_followers_or_following(self, crawl_type, query, number):
@@ -519,7 +507,7 @@ def main():
                         help='Number of posts to download: integer')
     parser.add_argument('-c', '--caption', action='store_true', default=True,
                         help='Add this flag to download caption when downloading photos')
-    parser.add_argument('-l', '--headless', default=True, action='store_true',
+    parser.add_argument('-l', '--headless', default=False, action='store_true',
                         help='If set, will use PhantomJS driver to run script as headless')
     parser.add_argument('-a', '--authentication', type=str, default=None,
                         help='path to authentication json file')
@@ -530,12 +518,17 @@ def main():
     #  End Argparse #
     #init arg
     crawler = InstagramCrawler(headless=args.headless, firefox_path=args.firefox_path, firefox=False)
-    crawler.crawl(dir_prefix=args.dir_prefix,
-                  query=args.query,
-                  crawl_type=args.crawl_type,
-                  number=args.number,
-                  caption=args.caption,
-                  authentication=args.authentication)
+    # crawler.crawl(dir_prefix=args.dir_prefix,
+    #               query=args.query,
+    #               crawl_type=args.crawl_type,
+    #               number=args.number,
+    #               caption=args.caption,
+    #               authentication=args.authentication)
+    crawler.browse_target_page(args.query) \
+           .scroll_to_num_of_posts(args.number) \
+           .scrape_photo_links(args.number) \
+           .click_and_scrape_captions(args.number)
+
 
 
 if __name__ == "__main__":
