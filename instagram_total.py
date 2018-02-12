@@ -29,6 +29,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 # HOST
+WEBBRIVER_CHROME_PATH = '/home/dev/insta_crawling/chromedriver'
 HOST = 'https://www.instagram.com'
 #_1cr2e
 # SELENIUM CSS SELECTOR
@@ -79,7 +80,9 @@ class InstagramCrawler(object):
             options.add_argument('window-size=1920x1080')
             options.add_argument("disable-gpu")
 
-            self._driver = webdriver.Chrome('/home/hyunsh/insta_crawling/chrome/chromedriver', chrome_options=options)
+            # binary = FirefoxBinary(firefox_path)
+            self._driver = webdriver.Chrome(WEBBRIVER_CHROME_PATH, chrome_options=options)
+
         else:
             if firefox :
 
@@ -87,7 +90,9 @@ class InstagramCrawler(object):
                 self._driver = webdriver.Firefox(firefox_binary=binary)
             else:
 
-                self._driver = webdriver.Chrome('/home/hyunsh/insta_crawling/chrome/chromedriver')
+                #binary = FirefoxBinary(firefox_path)
+                self._driver = webdriver.Chrome(WEBBRIVER_CHROME_PATH)
+
 
         self.data = defaultdict(list)
 
