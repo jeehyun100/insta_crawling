@@ -8,6 +8,9 @@ import os
 import re
 import sys
 import time
+from utils.crawling_utils import pandas_utils
+import shutil
+
 try:
     from urlparse import urljoin
     from urllib import urlretrieve
@@ -57,6 +60,11 @@ FOLLOWING_PATH = "//div[contains(text(), 'Following')]"
 SCROLL_UP = "window.scrollTo(0, 0);"
 SCROLL_DOWN = "window.scrollTo(0, document.body.scrollHeight);"
 
+MASTER_DATA_PATH = './master_data'
+MASTER_DATA_FILE = 'crowling_master_data.csv'
+MASTER_DATA_BACKUP = './master_data/backup'
+MASTER_DATA_COLUMN_LIST = ['id', 'ModifyDatetime', 'ActiveFlag', 'Crawling_time',  'Total_post']
+
 class url_change(object):
     """
         Used for caption scraping
@@ -95,6 +103,7 @@ class InstagramCrawler(object):
 
 
         self.data = defaultdict(list)
+        self.current_df = pd.DataFrame()
 
     def login(self, authentication=None):
         """
@@ -173,7 +182,7 @@ class InstagramCrawler(object):
         if '#' in  query:
         #if query.startswith('\'\\''#'):
             #relative_url = urljoin('explore/tags/', query.strip('#'))
-            relative_url = 'explore/tags/대한민국'
+            relative_url = ''.join(['explore/tags/',query.strip('#')])
         else:  # Browse user page
             relative_url = query
 
@@ -195,18 +204,13 @@ class InstagramCrawler(object):
             print("Show total count detail {}".format(number))
 
         num_of_posts = _num_of_posts.text
-
-
         num_of_posts = int(num_of_posts.replace(',',''))
 
         print("posts: {}, number: {}".format(num_of_posts, number))
         number = number if number < num_of_posts else num_of_posts
 
-
-        element = self._driver.find_element_by_css_selector("._1cr2e")
-        self._driver.execute_script("arguments[0].click();", element)
-
-
+        #element = self._driver.find_element_by_css_selector("._1cr2e")
+        #self._driver.execute_script("arguments[0].click();", element)
 
         num_to_scroll = int((number - 12) / 12) + 1
         for _ in range(num_to_scroll):
@@ -219,7 +223,7 @@ class InstagramCrawler(object):
     def scrape_photo_links(self, number, is_hashtag=False):
         print("Scraping photo links...")
         encased_photo_links = re.finditer(r'src="([https]+:...[\/\w \.-]*..[\/\w \.-]*'
-                                          r'..[\/\w \.-]*..[\/\w \.-].jpg)', self._driver.page_source)
+                                          r'..[\/\w \.-]*..[\/\w \.-].jpg 640w)', self._driver.page_source)
 
         photo_links = [m.group(1) for m in encased_photo_links]
 
@@ -229,6 +233,55 @@ class InstagramCrawler(object):
 
         self.data['photo_links'] = photo_links[begin:number + begin]
         return self
+
+    def wait_element_xpath(self, elements_path):
+        _f_post = ""
+        try:
+            WebDriverWait(self._driver, 10).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, elements_path)
+                )
+            )
+            _f_post = self._driver.find_element_by_xpath(elements_path)
+
+
+        except TimeoutException:
+            print("Exception for Show wait_element Xpath {}".format(elements_path))
+
+
+        return _f_post
+
+    def wait_element_css_selector(self, elements_path):
+        _f_post = ""
+        try:
+            _f_post = WebDriverWait(self._driver, 100).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, elements_path)
+                )
+            )
+        except TimeoutException:
+            _f_post = WebDriverWait(self._driver, 100).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, elements_path)
+                )
+            )
+            print("Exception for Show wait_element Css Selector  {}".format(elements_path))
+        return _f_post
+
+    def get_element_tag_name(self, elements_tag):
+        _f_post = ""
+        try:
+            WebDriverWait(self._driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, elements_tag))
+            )
+            _f_post = self._driver.find_element_by_tag_name(elements_tag)#.get_attribute('datetime')
+            #m_time = datetime.datetime.strptime(_m_time, "%Y-%m-%dT%H:%M:%S.000Z")
+
+        except NoSuchElementException:  # Forbidden
+            print("Caption not found in the {} ids".format(elements_tag))
+            #m_time = ""
+        return _f_post
+
 
     def click_and_scrape_captions(self, number):
         print("Scraping captions...")
@@ -242,174 +295,100 @@ class InstagramCrawler(object):
             sys.stdout.write("\033[F")
             print("Scraping captions {} / {}".format(post_num+1,number))
             if post_num == 0:  # Click on the first post
-                # should wait for loading
-                # another way
-                #next_element = self._driver.find_element_by_class_name('_mck9w')
-                #self._driver.execute_script("arguments[0].click();", next_element)
-                _f_post = None
-
-                try:
-                    _f_post = WebDriverWait(self._driver, 100).until(
-                        EC.presence_of_element_located(
-                            (By.XPATH, "//div[contains(@class, '_mck9w')]")
-                        )
-                    )
-                except TimeoutException:
-                    print("Show detail2 {}".format(post_num))
-                    break
-
-                #
+                wait_first_post = self.wait_element_xpath("//div[contains(@class, '_mck9w')]")
                 time.sleep(1)
-                _f_post2 = self._driver.find_element_by_xpath(
-                    FIREFOX_FIRST_POST_PATH)
-                #self._driver.execute_script('arguments[0].target="_blank";', _f_post2)
-                _f_post2.click()
-
-                #driver.find_element_by_tag_name("body").send_keys(Keys.COMMAND + 't')
-
+                wait_first_post_for_click = self.wait_element_xpath("//div[contains(@class, '_mck9w')]")
+                wait_first_post_for_click.click()
 
                 if number != 1:  #
-                    # WebDriverWait(self._driver, 100).until(
-                    #     EC.presence_of_element_located(
-                    #         (By.CSS_SELECTOR, "._3a693")
-                    #     )
-                    # )
-                    try:
-                        init_right_arrow = WebDriverWait(self._driver, 1).until(
-                            EC.presence_of_element_located(
-                                (By.CSS_SELECTOR, CSS_RIGHT_ARROW)
-                            )
-                        )
-                    except:
-                        init_right_arrow = WebDriverWait(self._driver, 1).until(
-                            EC.presence_of_element_located(
-                                (By.CSS_SELECTOR, CSS_RIGHT_ARROW)
-                            )
-                        )
-
-                        # popup = self._driver.find_element_by_css_selector(
-                        #     "div._70iju:nth-child(1) > div:nth-child(1)").click()
-                        #
+                    init_right_arrow = self.wait_element_css_selector(CSS_RIGHT_ARROW)
                     init_right_arrow.click()
 
 
             elif number != 1:  # Click Right Arrow to move to next post
-                url_before = self._driver.current_url
-
-                try:
-                    right_arrow = WebDriverWait(self._driver, 1).until(
-                        EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, CSS_RIGHT_ARROW)
-                        )
-                    )
-                except:
-                    right_arrow = WebDriverWait(self._driver, 1).until(
-                        EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, CSS_RIGHT_ARROW)
-                        )
-                    )
+                right_arrow = self.wait_element_css_selector(CSS_RIGHT_ARROW)
                 right_arrow.click()
 
-            # get time을 해서 click이 가능하게 바
+            #Main Page를 들어가기위해 links를 가져온다
+            #/html/body/div[3]/div/div[2]/div/article/header/div[2]/div[1]/div[1]/a
+            #body > div: nth - child(
+            #    13) > div > div._o0j5z > div > article > header > div._j56ec > div._74oom > div._eeohz > a
+            #"//a[contains(@class, '_74oom _eeohz')]"
+            _id_click1 = "'//a[contains(@class, '_pg23k _gvoze')]'"
+            _id_click2 = "//a[contains(@class, '_2g7d5')]"
+            wait_get_detail_id = self.wait_element_xpath(_id_click2)
+            wait_get_detail_id.click()
 
+            #ID를 가져 오기
+            _id_detail_main = self.wait_element_xpath("//h1[contains(@class, '_rf3jb')]")
+            id_detail_main = _id_detail_main.text
+            print("id : {0}".format(id_detail_main))
+            #POST 갯수를 가져오기
+
+            _get_post_xpath = "//span[contains(@class, '_fd86t')]"
+            _id_detail_count = self.wait_element_xpath(_get_post_xpath).text
+            id_detail_count = int(_id_detail_count.replace(',',''))
+            print("detail post count : {0}".format(id_detail_count))
+
+
+
+            # First Post를 가져 오기
+            f_post_detail = self.wait_element_xpath("//div[contains(@class, '_mck9w')]")
+            f_post_detail.click()
+
+            _m_time_elememt = self.get_element_tag_name("time")
+            _m_time = _m_time_elememt.get_attribute('datetime')
             try:
-                WebDriverWait(self._driver, 10).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "time"))
-                )
-                _m_time = self._driver.find_element_by_tag_name('time').get_attribute('datetime')
-                m_time = datetime.datetime.strptime(_m_time, "%Y-%m-%dT%H:%M:%S.000Z")
-
-            except NoSuchElementException:  # Forbidden
-                print("Caption not found in the {} ids".format(post_num))
-                m_time = ""
-
-            try:
-                    #WebDriverWait(self._driver, 10).until(
-                    #EC.presence_of_element_located((By.XPATH, "//div[contains(@class, '_eeohz')]"))
-                    #_ids_element = WebDriverWait(self._driver, 10).until(
-                    #    EC.presence_of_element_located((By.CSS_SELECTOR,
-                    #                                    "body > div:nth-child(13) > div > div._o0j5z > div > article > header > div._j56ec > div._74oom > div._eeohz"))
-                #)
-                    # ididid = WebDriverWait(self._driver,10).until(
-                    #     EC.element_to_be_clickable((By.XPATH,"//div[contains(@class, '_eeohz')]"))
-                    # )
-                    # ididid = WebDriverWait(self._driver,10).until(
-                    #     EC.element_to_be_clickable((By.XPATH,"//div[contains(@class, '_pg23k._gvoze')]"))
-                    # )
-                    ididid = WebDriverWait(self._driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, "//a[contains(@class, '_pg23k _gvoze')]")))
-                # id = _ids_element.find_element_by_xpath(
-                #     "//div[contains(@class, '_eeohz')]").text
-
-
-            except NoSuchElementException:  # Forbidden
-                print("Caption not found in the {} ids".format(post_num))
-                id = ""
-            #_ids_element = self._driver.find_element_by_xpath(
-            #    "//div[contains(@class, '_eeohz')]")
-            ididid.click()
-
-            try:
-                WebDriverWait(self._driver, 100).until(
-                    EC.presence_of_element_located(
-                        (By.XPATH, "//h1[contains(@class, '_rf3jb')]")
-                    )
-                )
-                id_detail_main = self._driver.find_element_by_xpath("//h1[contains(@class, '_rf3jb')]").text
-
-                print("id : {0}".format(id_detail_main))
-            except TimeoutException:
-                print("Show detail2 {}".format(post_num))
-                break
-
-            try:
-                _f_post_detail = WebDriverWait(self._driver, 100).until(
-                    EC.presence_of_element_located(
-                        (By.XPATH, "//div[contains(@class, '_mck9w')]")
-                    )
-                )
-            except TimeoutException:
-                print("Show detail2 {}".format(post_num))
-                break
-
-            #
-
-            #time.sleep(0.5)
-            _f_post_detail = self._driver.find_element_by_xpath(
-                FIREFOX_FIRST_POST_PATH)
-            _f_post_detail.click()
-
-
-            try:
-                WebDriverWait(self._driver, 10).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "time"))
-                )
-                _m_time = self._driver.find_element_by_tag_name('time').get_attribute('datetime')
-                m_time = datetime.datetime.strptime(_m_time,"%Y-%m-%dT%H:%M:%S.000Z")
-                print("modify time {0}".format(m_time))
-
-            except NoSuchElementException:  # Forbidden
-                print("Caption not found in the {} ids".format(post_num))
+                m_time =  datetime.datetime.strptime(_m_time, "%Y-%m-%dT%H:%M:%S.000Z")
+            except Exception:
+                print("Detail First Pos Modifu Time Error {} ")
                 m_time = ""
             time.sleep(1)
             self._driver.execute_script("window.history.go(-2)")
-            try:
-                init_right_arrow = WebDriverWait(self._driver, 10).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, CSS_RIGHT_ARROW)
-                    )
-                )
 
-            except NoSuchElementException:  # Forbidden
-                print("Can not go back history -2 {} ids".format(post_num))
-            id_mtime_row.append([id_detail_main, m_time])
+
+            init_right_arrow = self.wait_element_css_selector(CSS_RIGHT_ARROW)
+            init_right_arrow.click()
+
+            id_mtime_row.append([id_detail_main, m_time,'Y',m_time,id_detail_count])
             #ids.append("1")
 
         self.data['captions'] = ids
         print(id_mtime_row)
-        df = pd.DataFrame(id_mtime_row, columns=['id', 'ModifyDatetime'])
-        df.to_csv("Main_crawling.csv")
+        self.current_df = pd.DataFrame(id_mtime_row, columns=MASTER_DATA_COLUMN_LIST)
+        #self.make_pandas(df)
+        #df.to_csv("Main_crawling.csv")
         return self
+
+    def make_pandas(self):
+        pd_utils = pandas_utils()
+        # At the first time
+        #[x for x in os.listdir() if x.endswith(".txt")]
+        if not os.path.exists(MASTER_DATA_PATH):
+            os.mkdir(MASTER_DATA_PATH)
+
+        filelists = [ _f for _f in os.listdir(MASTER_DATA_PATH) if _f in MASTER_DATA_FILE]
+        if len(filelists) == 0:
+            self.current_df.to_csv(''.join([MASTER_DATA_PATH , "/" , MASTER_DATA_FILE]))
+        else:
+            original_df = pd.read_csv(''.join([MASTER_DATA_PATH , "/" , MASTER_DATA_FILE]))
+            columns_name = ['seq', 'id', 'm_time_ori', 'm_time_cur']
+            result_temp = pd_utils.merge(original_df,self.current_df )
+            result = result_temp[MASTER_DATA_COLUMN_LIST]
+            #make backup file
+            self.make_backup_file()
+            #save csv file
+            result.to_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
+
+        return self
+    def make_backup_file(self):
+        #폴더체크
+        backup_file_name = "bk_"+ datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ".csv"
+
+        if not os.path.exists(MASTER_DATA_BACKUP):
+            os.mkdir(MASTER_DATA_BACKUP)
+
+        shutil.copy2(''.join([MASTER_DATA_PATH , "/" , MASTER_DATA_FILE]), ''.join([MASTER_DATA_BACKUP,"/",backup_file_name]))  # complete target filename given
 
 
     def scrape_followers_or_following(self, crawl_type, query, number):
@@ -459,7 +438,7 @@ class InstagramCrawler(object):
 
         self.data[crawl_type] = follow_items
 
-    def download_and_save(self, dir_prefix, query, crawl_type):
+    def download_and_save(self, dir_prefix, query, crawl_type,id):
         # Check if is hashtag
         dir_name = query.lstrip(
             '#') + '.hashtag' if query.startswith('#') else query
@@ -497,7 +476,23 @@ class InstagramCrawler(object):
             with codecs.open(filepath, 'w', encoding='utf-8') as fout:
                 for fol in self.data[crawl_type]:
                     fout.write(fol + '\n')
+        return self
 
+
+    def save_after_crawling_master_data(self,id):
+        read_df = pd.read_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
+        #read_df.loc[read_df['id'] == id]['ActiveFlag'] = 'N'
+        read_df.loc[read_df['id'] == id, 'ActiveFlag'] = 'N'
+        read_df.loc[read_df['id'] == id, 'Crawling_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        result = read_df[MASTER_DATA_COLUMN_LIST]
+        result.to_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
+        return self
+
+
+def load_master_data():
+    original_df = pd.read_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
+    get_start_insta_id = original_df.loc[original_df['ActiveFlag'] == 'Y']['id']
+    return get_start_insta_id
 
 def main():
     #   Arguments  #
@@ -529,10 +524,24 @@ def main():
     #               number=args.number,
     #               caption=args.caption,
     #               authentication=args.authentication)
+
+    # # get Total id by Tag
     crawler.browse_target_page(args.query) \
            .scroll_to_num_of_posts(args.number) \
            .scrape_photo_links(args.number) \
-           .click_and_scrape_captions(args.number)
+           .click_and_scrape_captions(args.number) \
+           .make_pandas()
+
+
+    for _id  in load_master_data():
+        print(_id)
+        crawler.browse_target_page(_id) \
+               .scroll_to_num_of_posts(args.number) \
+               .scrape_photo_links(args.number) \
+               .download_and_save(args.dir_prefix,_id,args.dir_prefix,_id) \
+               .save_after_crawling_master_data(_id)
+
+
 
 
 

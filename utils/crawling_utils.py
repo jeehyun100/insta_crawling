@@ -1,7 +1,8 @@
 import pandas as pd
+import datetime
 
 
-class url_change(object):
+class pandas_utils(object):
     def __init__(self):
         return print("init class")
     def make_df(self):
@@ -13,6 +14,7 @@ class url_change(object):
         return df1, df2
     def save_df(self):
         return None
+
     def merge(self, df1, df2):
         result = pd.merge(df1, df2, how='outer', on=['id'])
         #df['period'] = df[['Year', 'quarter']].apply(lambda x: ''.join(x), axis=1)
@@ -21,23 +23,39 @@ class url_change(object):
         #     return row['a'] % row['c']
         #df['Value'] = df.apply(my_test2, axis=1)
         result = result.fillna(0)
-        result['new'] = result.apply(self.compare_modify_time,axis=1)
+        #result.columns = columns_name
+        result = result.apply(self.compare_modify_time2, axis=1)
+
+        #Column Rename for crowling time
+        result = result.rename(columns={'Crawling_time_x': 'Crawling_time','Total_post_x':'Total_post'})
+
         return result
-    def compare_modify_time(self, row):
-        original_time = row['ModifyDatetime_x']
+
+    def compare_modify_time2(self, row):
+        _original_time = row['ModifyDatetime_x']
         modify_time = row['ModifyDatetime_y']
+        try:
+            original_time = datetime.datetime.strptime(_original_time, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            original_time = datetime.datetime.strptime('1900-01-01 00:00:00', "%Y-%m-%d %H:%M:%S")
+
         if original_time  < modify_time:
-            result = modify_time
+            actual_time = modify_time
+            active_flag = 'Y'
         else:
-            result = original_time
-        return result
+            actual_time = original_time
+            active_flag = 'N;'
+
+        row["ModifyDatetime"] = actual_time.strftime("%Y-%m-%d %H:%M:%S")
+        row["ActiveFlag"] = active_flag
+        return row
 
 
 
 def main():
-    util_cls = url_change()
-    pd1, pd2 = util_cls.make_df()
-    merge_df = util_cls.merge(pd1, pd2)
+    pd_utils = pandas_utils()
+    pd1, pd2 = pd_utils.make_df()
+    merge_df = pd_utils.merge(pd1, pd2)
 
     print(merge_df)
 
