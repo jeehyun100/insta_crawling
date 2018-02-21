@@ -44,7 +44,7 @@ class pandas_utils(object):
             active_flag = 'Y'
         else:
             actual_time = original_time
-            active_flag = 'N;'
+            active_flag = 'N'
 
         row["ModifyDatetime"] = actual_time.strftime("%Y-%m-%d %H:%M:%S")
         row["ActiveFlag"] = active_flag

@@ -10,7 +10,10 @@ import sys
 import time
 from utils.crawling_utils import pandas_utils
 import shutil
-
+from align.predict import face_detect_crawling
+import cv2
+import tensorflow as tf
+import align.detect_face as detect_face
 try:
     from urlparse import urljoin
     from urllib import urlretrieve
@@ -222,8 +225,9 @@ class InstagramCrawler(object):
 
     def scrape_photo_links(self, number, is_hashtag=False):
         print("Scraping photo links...")
+        #Image save regulation expression
         encased_photo_links = re.finditer(r'src="([https]+:...[\/\w \.-]*..[\/\w \.-]*'
-                                          r'..[\/\w \.-]*..[\/\w \.-].jpg 640w)', self._driver.page_source)
+                                          r'..[\/\w \.-]*..[\/\w \.-].jpg)', self._driver.page_source)
 
         photo_links = [m.group(1) for m in encased_photo_links]
 
@@ -378,6 +382,7 @@ class InstagramCrawler(object):
             #make backup file
             self.make_backup_file()
             #save csv file
+            result = result.drop_duplicates()
             result.to_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
 
         return self
@@ -438,16 +443,49 @@ class InstagramCrawler(object):
 
         self.data[crawl_type] = follow_items
 
-    def download_and_save(self, dir_prefix, query, crawl_type,id):
+    def detect_face_from_image(self, pnet, rnet, onet, raw_filepath, filename,detect_dir_path):
+        _detecter = face_detect_crawling()
+        #filename = raw_filepath
+
+        image = cv2.imread(raw_filepath, flags=cv2.IMREAD_COLOR)
+        #config = tf.ConfigProto(device_count={'GPU': 0})
+        #with tf.Session(config=config) as sess:
+        #pnet, rnet, onet = detect_face.create_mtcnn(sess, None)
+            # frame, self.minsize, self.pnet, self.rnet, self.onet,self.threshold, self.factor
+        minsize = 20
+        threshold = [0.6, 0.7, 0.7]
+        factor = 0.709
+        margin = 90
+            # image_size = 300
+            # cropped_size = 30  # rotation use
+        detect_type = 'mtcnn'  # dlib, mtcnn, hog, cnn
+        #rotation = False
+        aligned, boxes = face_detect_crawling.get_boxes_frame(minsize, pnet, rnet, onet, threshold, factor, image,
+                                                                  detect_type, margin)
+        detect_filepath =  os.path.join(detect_dir_path, filename)
+        if aligned != None:
+            #cv2.imshow("Window", aligned);
+            #print("detect face from images {0}".format(detect_filepath))
+            cv2.imwrite(detect_filepath,aligned)
+        else:
+            print("No detect face from images {0}".format(detect_filepath))
+        #print("success")
+
+
+    def download_and_save(self, dir_prefix, query, crawl_type,id, pnet, rnet, onet):
         # Check if is hashtag
         dir_name = query.lstrip(
             '#') + '.hashtag' if query.startswith('#') else query
 
-        dir_path = os.path.join(dir_prefix, dir_name)
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+        raw_dir_path = os.path.join(dir_prefix , dir_name,'raw')
+        detect_dir_path = os.path.join(dir_prefix, dir_name,'detect')
 
-        print("Saving to directory: {}".format(dir_path))
+        if not os.path.exists(raw_dir_path):
+            os.makedirs(raw_dir_path)
+        if not os.path.exists(detect_dir_path):
+            os.makedirs(detect_dir_path)
+
+        print("Saving to directory: {}".format(raw_dir_path))
 
         # Save Photos
         for idx, photo_link in enumerate(self.data['photo_links'], 0):
@@ -455,23 +493,43 @@ class InstagramCrawler(object):
             print("Downloading {} images to ".format(idx + 1))
             # Filename
             _, ext = os.path.splitext(photo_link)
-            filename = str(idx) + ext
-            filepath = os.path.join(dir_path, filename)
+            #Filename _make
+            #seq + date +
+            _file_list_recent = os.listdir(raw_dir_path)
+            #_file_list_sort = _file_list_recent.sort()
+
+
+            _file_list_end = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            if _file_list_recent is None  or _file_list_recent.__len__() == 0:
+                _idx = 1
+            else:
+                #get max file number in the directory
+                exist_filename = sorted([int(_x.split('_')[0]) for _x in _file_list_recent], reverse=True)[0]
+                _idx = int(exist_filename)+ 1
+
+            #raw file save
+            filename = str(_idx) + '_' +_file_list_end+ ext
+            raw_filepath = os.path.join(raw_dir_path, filename)
             # Send image request
-            urlretrieve(photo_link, filepath)
+            urlretrieve(photo_link, raw_filepath)
+            #face detection file save
+            #face_detect_dir_path = os.path.join(dir_prefix, 'face_detect', dir_name)
+             #image filename
+            self.detect_face_from_image(pnet, rnet, onet, raw_filepath, filename,detect_dir_path)
+
 
         # Save Captions
         for idx, caption in enumerate(self.data['captions'], 0):
 
             filename = str(idx) + '.txt'
-            filepath = os.path.join(dir_path, filename)
+            filepath = os.path.join(raw_dir_path, filename)
 
             with codecs.open(filepath, 'w', encoding='utf-8') as fout:
                 fout.write(caption + '\n')
 
         # Save followers/following
         filename = crawl_type + '.txt'
-        filepath = os.path.join(dir_path, filename)
+        filepath = os.path.join(raw_dir_path, filename)
         if len(self.data[crawl_type]):
             with codecs.open(filepath, 'w', encoding='utf-8') as fout:
                 for fol in self.data[crawl_type]:
@@ -479,20 +537,26 @@ class InstagramCrawler(object):
         return self
 
 
+
     def save_after_crawling_master_data(self,id):
         read_df = pd.read_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
         #read_df.loc[read_df['id'] == id]['ActiveFlag'] = 'N'
         read_df.loc[read_df['id'] == id, 'ActiveFlag'] = 'N'
         read_df.loc[read_df['id'] == id, 'Crawling_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        read_df.loc[read_df['id'] == id, 'ModifyDatetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         result = read_df[MASTER_DATA_COLUMN_LIST]
         result.to_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
         return self
 
 
 def load_master_data():
-    original_df = pd.read_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
-    get_start_insta_id = original_df.loc[original_df['ActiveFlag'] == 'Y']['id']
-    return get_start_insta_id
+    original_df = pd.read_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE])).drop_duplicates()
+    get_activeflag_start_insta_id = original_df.loc[original_df['ActiveFlag'] == 'Y']
+    get_total_post_start_insta_id = get_activeflag_start_insta_id.loc[get_activeflag_start_insta_id['Total_post'].astype('int') > 300]['id']
+
+    #get_start_insta_id = _get_start_insta_id.dro
+    print("Downloading instafram images by id : {0}".format(get_total_post_start_insta_id))
+    return get_total_post_start_insta_id
 
 def main():
     #   Arguments  #
@@ -515,6 +579,11 @@ def main():
                         help='path to Firefox installation')
     args = parser.parse_args()
 
+    config = tf.ConfigProto(device_count={'GPU': 0})
+    sess =  tf.Session(config=config)
+    pnet, rnet, onet = detect_face.create_mtcnn(sess, None)
+        # frame, self.minsize, self.pnet, self.rnet, self.onet,self.threshold, self.factor
+
     #  End Argparse #
     #init arg
     crawler = InstagramCrawler(headless=args.headless, firefox_path=args.firefox_path, firefox=False)
@@ -534,15 +603,14 @@ def main():
 
 
     for _id  in load_master_data():
-        print(_id)
+        print('Detail save picture : {0}'.format(_id))
         crawler.browse_target_page(_id) \
                .scroll_to_num_of_posts(args.number) \
                .scrape_photo_links(args.number) \
-               .download_and_save(args.dir_prefix,_id,args.dir_prefix,_id) \
+               .download_and_save(args.dir_prefix,_id,args.dir_prefix,_id, pnet, rnet, onet) \
                .save_after_crawling_master_data(_id)
 
-
-
+    sess.close()
 
 
 if __name__ == "__main__":
