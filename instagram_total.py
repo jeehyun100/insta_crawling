@@ -34,6 +34,8 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from bs4 import BeautifulSoup
+
 # HOST
 WEBBRIVER_CHROME_PATH = '/home/dev/insta_crawling/chromedriver'
 HOST = 'https://www.instagram.com'
@@ -67,6 +69,10 @@ MASTER_DATA_PATH = './master_data'
 MASTER_DATA_FILE = 'crowling_master_data.csv'
 MASTER_DATA_BACKUP = './master_data/backup'
 MASTER_DATA_COLUMN_LIST = ['id', 'ModifyDatetime', 'ActiveFlag', 'Crawling_time',  'Total_post']
+
+
+EXCEPT_DATA_PATH = './except_data'
+EXCEPT_DATA_FILE = 'crowling_except_data.csv'
 
 class url_change(object):
     """
@@ -219,8 +225,11 @@ class InstagramCrawler(object):
         for _ in range(num_to_scroll):
             self._driver.execute_script(SCROLL_DOWN)
             time.sleep(0.5)
-            self._driver.execute_script(SCROLL_UP)
-            time.sleep(0.5)
+            #self.scrape_photo_links(300)
+            #self._driver.execute_script(SCROLL_UP)
+            #time.sleep(0.5)
+            #self._driver.execute_script(SCROLL_DOWN)
+            #time.sleep(0.5)
         return self
 
     def scrape_photo_links(self, number, is_hashtag=False):
@@ -228,14 +237,21 @@ class InstagramCrawler(object):
         #Image save regulation expression
         encased_photo_links = re.finditer(r'src="([https]+:...[\/\w \.-]*..[\/\w \.-]*'
                                           r'..[\/\w \.-]*..[\/\w \.-].jpg)', self._driver.page_source)
+        #encased_photo_links = re.finditer(r'src="([https]+:...[\/\w \.-]*..[\/\w \.-]*'
+        #                                  r'..[\/\w \.-]*..[\/\w \.-].jpg)', self._driver.page_source)
 
+
+        soup = BeautifulSoup(self._driver.page_source, 'html.parser')
+        _pl = soup.find_all('img')
         photo_links = [m.group(1) for m in encased_photo_links]
 
         print("Number of photo_links: {}".format(len(photo_links)))
 
-        begin = 0 if is_hashtag else 1
+        #begin = 0 if is_hashtag else 1
 
-        self.data['photo_links'] = photo_links[begin:number + begin]
+        self.data['photo_links'].extend(photo_links)
+        self.data['photo_links']= list(set(self.data['photo_links']))
+        #self.data['photo_links'] = photo_links
         return self
 
     def wait_element_xpath(self, elements_path):
@@ -251,6 +267,34 @@ class InstagramCrawler(object):
 
         except TimeoutException:
             print("Exception for Show wait_element Xpath {}".format(elements_path))
+
+
+        return _f_post
+
+    def wait_element_xpath_either(self, elements_path1,elements_path2 ):
+        _f_post = ""
+        try:
+            WebDriverWait(self._driver, 1).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, elements_path1)
+                )
+            )
+            _f_post = self._driver.find_element_by_xpath(elements_path1).get_attribute('src')
+
+
+        except Exception:
+            print("Exception for wait_element_xpath_either {}".format("first exception"))
+            try:
+                print("Exception for Show wait_element Xpath {}".format(elements_path2))
+                _f_post = self._driver.find_element_by_xpath(elements_path2).get_attribute('src')
+            except Exception:
+                print("Exception for wait_element_xpath_either {}".format("second exception"))
+                try:
+                    _f_post = self._driver.find_element_by_xpath("//div[contains(@class, '_sxolz')]/div/div/div/div/img").get_attribute('src')
+                except Exception:
+                    print("Exception for wait_element_xpath_either {}".format("thitrd exception"))
+                    _f_post = self._driver.find_element_by_xpath(
+                        "//div[contains(@class, '_sxolz')]/div/div/div/img").get_attribute('src')
 
 
         return _f_post
@@ -355,6 +399,91 @@ class InstagramCrawler(object):
             init_right_arrow.click()
 
             id_mtime_row.append([id_detail_main, m_time,'Y',m_time,id_detail_count])
+            #ids.append("1")
+
+        self.data['captions'] = ids
+        print(id_mtime_row)
+        self.current_df = pd.DataFrame(id_mtime_row, columns=MASTER_DATA_COLUMN_LIST)
+        #self.make_pandas(df)
+        #df.to_csv("Main_crawling.csv")
+        return self
+
+    def click_and_1080_images(self, number):
+        print("Scraping captions...")
+        captions = []
+        ids = []
+        modify_time = []
+        id_mtime_col = {}
+        id_mtime_row = []
+
+        for post_num in range(number):
+            sys.stdout.write("\033[F")
+            print("Scraping captions {} / {}".format(post_num+1,number))
+            if post_num == 0:  # Click on the first post
+                wait_first_post = self.wait_element_xpath("//div[contains(@class, '_mck9w')]")
+                time.sleep(1)
+                wait_first_post_for_click = self.wait_element_xpath("//div[contains(@class, '_mck9w')]")
+                wait_first_post_for_click.click()
+
+                if number != 1:  #
+                    init_right_arrow = self.wait_element_css_selector(CSS_RIGHT_ARROW)
+                    init_right_arrow.click()
+
+
+            elif number != 1:  # Click Right Arrow to move to next post
+                right_arrow = self.wait_element_css_selector(CSS_RIGHT_ARROW)
+                right_arrow.click()
+
+            #Main Page를 들어가기위해 links를 가져온다
+            #/html/body/div[3]/div/div[2]/div/article/header/div[2]/div[1]/div[1]/a
+            #body > div: nth - child(
+            #    13) > div > div._o0j5z > div > article > header > div._j56ec > div._74oom > div._eeohz > a
+            #"//a[contains(@class, '_74oom _eeohz')]"
+            #_id_click1 = "'//a[contains(@class, '_pg23k _gvoze')]'"
+            #_id_click2 = "//a[contains(@class, '_2g7d5')]"
+            #wait_get_detail_id = self.wait_element_xpath(_id_click2)
+            #wait_get_detail_id.click()
+
+            soup = BeautifulSoup(self._driver.page_source, 'html.parser')
+            _pl = soup.find_all('img')
+
+            #ID를 가져 오기
+            _id_detail_main = self.wait_element_xpath("//h1[contains(@class, '_rf3jb')]")
+            id_detail_main = _id_detail_main.text
+            print("id : {0}".format(id_detail_main))
+
+            img_path = self.wait_element_xpath_either("//div[contains(@class, '_sxolz')]/div/div/div/div/div/div/img","//div[contains(@class, '_sxolz')]/div/div/div/div/div/img")
+            #POST 갯수를 가져오기
+            self.data['photo_links'].append(img_path)
+
+            self.data['photo_links'] = list(set(self.data['photo_links']))
+
+            #_get_post_xpath = "//span[contains(@class, '_fd86t')]"
+            #_id_detail_count = self.wait_element_xpath(_get_post_xpath).text
+            #id_detail_count = int(_id_detail_count.replace(',',''))
+            #print("detail post count : {0}".format(id_detail_count))
+
+
+
+            # First Post를 가져 오기
+            #f_post_detail = self.wait_element_xpath("//div[contains(@class, '_mck9w')]")
+            #f_post_detail.click()
+
+            #_m_time_elememt = self.get_element_tag_name("time")
+            #_m_time = _m_time_elememt.get_attribute('datetime')
+            #try:
+                #m_time =  datetime.datetime.strptime(_m_time, "%Y-%m-%dT%H:%M:%S.000Z")
+            #except Exception:
+                #print("Detail First Pos Modifu Time Error {} ")
+                #m_time = ""
+            #time.sleep(1)
+            #self._driver.execute_script("window.history.go(-2)")
+
+
+            init_right_arrow = self.wait_element_css_selector(CSS_RIGHT_ARROW)
+            init_right_arrow.click()
+
+            #id_mtime_row.append([id_detail_main, m_time,'Y',m_time,id_detail_count])
             #ids.append("1")
 
         self.data['captions'] = ids
@@ -550,13 +679,32 @@ class InstagramCrawler(object):
 
 
 def load_master_data():
-    original_df = pd.read_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE])).drop_duplicates()
-    get_activeflag_start_insta_id = original_df.loc[original_df['ActiveFlag'] == 'Y']
-    get_total_post_start_insta_id = get_activeflag_start_insta_id.loc[get_activeflag_start_insta_id['Total_post'].astype('int') > 300]['id']
+    try:
+        original_df = pd.read_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE])).drop_duplicates()
+        except_df = pd.read_csv(''.join([EXCEPT_DATA_PATH, "/", EXCEPT_DATA_FILE]))
 
-    #get_start_insta_id = _get_start_insta_id.dro
-    print("Downloading instafram images by id : {0}".format(get_total_post_start_insta_id))
-    return get_total_post_start_insta_id
+        #EXCEPT_DATA_PATH = './except_data'
+        #EXCEPT_DATA_FILE = 'crowling_except_data.csv'
+
+        minium_post_num = 300
+        pd_utils = pandas_utils(300)
+
+        active_flag_modify = pd_utils.change_activeflag_by_total_posts(original_df,minium_post_num)
+        active_flag_modify = active_flag_modify[MASTER_DATA_COLUMN_LIST]
+        active_flag_modify.to_csv(''.join([MASTER_DATA_PATH, "/", MASTER_DATA_FILE]))
+
+        get_activeflag_start_insta_id = original_df.loc[original_df['ActiveFlag'] == 'Y']
+        #get_substract_except_insta_id = get_activeflag_start_insta_id.loc[original_df['id'] != except_df['id']]
+        get_substract_except_insta_id = get_activeflag_start_insta_id[~get_activeflag_start_insta_id['id'].isin(except_df['id'].values.tolist())]
+        result = get_total_post_start_insta_id = get_substract_except_insta_id.loc[get_substract_except_insta_id['Total_post'].astype('int') > 300]['id']
+
+        #get_start_insta_id = _get_start_insta_id.dro
+        print("Downloading instafram images by id count : {0}".format(get_total_post_start_insta_id.__len__()))
+        #return result
+    except Exception:
+        print("Master Data Load Failed ")
+        result = pd.Series([])
+    return result
 
 def main():
     #   Arguments  #
@@ -577,6 +725,10 @@ def main():
                         help='path to authentication json file')
     parser.add_argument('-f', '--firefox_path', type=str, default=None,
                         help='path to Firefox installation')
+
+    parser.add_argument('-nd', '--number_detail', type=int, default=0,
+                        help='Number of detail posts to download: integer')
+
     args = parser.parse_args()
 
     config = tf.ConfigProto(device_count={'GPU': 0})
@@ -594,22 +746,22 @@ def main():
     #               caption=args.caption,
     #               authentication=args.authentication)
 
-    # # get Total id by Tag
-    crawler.browse_target_page(args.query) \
-           .scroll_to_num_of_posts(args.number) \
-           .scrape_photo_links(args.number) \
-           .click_and_scrape_captions(args.number) \
-           .make_pandas()
+    # # # # get Total id by Tag
+    # crawler.browse_target_page(args.query) \
+    #        .scroll_to_num_of_posts(args.number) \
+    #        .click_and_scrape_captions(args.number) \
+    #        .make_pandas()
 
+#.scrape_photo_links(args.number) \
 
     for _id  in load_master_data():
         print('Detail save picture : {0}'.format(_id))
         crawler.browse_target_page(_id) \
-               .scroll_to_num_of_posts(args.number) \
-               .scrape_photo_links(args.number) \
+               .scroll_to_num_of_posts(args.number_detail) \
+               .click_and_1080_images(args.number_detail) \
                .download_and_save(args.dir_prefix,_id,args.dir_prefix,_id, pnet, rnet, onet) \
                .save_after_crawling_master_data(_id)
-
+    # .scrape_photo_links(args.number_detail) \
     sess.close()
 
 
