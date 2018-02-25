@@ -23,7 +23,7 @@ except ImportError:
 
 import datetime
 import pandas as pd
-
+import math
 import requests
 import selenium
 from selenium import webdriver
@@ -35,6 +35,16 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from bs4 import BeautifulSoup
+
+import logging
+
+import cv2
+
+#import tensormsa_insightface.src.common.predict as predict
+import align.deploy.face_embedding as face_embedding
+import align.deploy.face_preprocess as face_preprocess
+#from tensormsa_insightface import init_value
+
 
 # HOST
 WEBBRIVER_CHROME_PATH = '/home/dev/insta_crawling/chromedriver'
@@ -600,6 +610,101 @@ class InstagramCrawler(object):
             print("No detect face from images {0}".format(detect_filepath))
         #print("success")
 
+    def insight_detect_face_from_image(self ):
+        _detecter = face_detect_crawling()
+        #filename = raw_filepath
+        raw_filepath = '/home/dev/insta_crawling/data/korea_486/raw/1_20180222093838.jpg'
+        image = cv2.imread(raw_filepath, flags=cv2.IMREAD_COLOR)
+
+
+        #config = tf.ConfigProto(device_count={'GPU': 0})
+        #with tf.Session(config=config) as sess:
+        #pnet, rnet, onet = detect_face.create_mtcnn(sess, None)
+            # frame, self.minsize, self.pnet, self.rnet, self.onet,self.threshold, self.factor
+        # minsize = 20
+        # threshold = [0.6, 0.7, 0.7]
+        # factor = 0.709
+        # margin = 90
+        #     # image_size = 300
+        #     # cropped_size = 30  # rotation use
+        # detect_type = 'mtcnn'  # dlib, mtcnn, hog, cnn
+        # #rotation = False
+        # aligned, boxes = face_detect_crawling.get_boxes_frame(minsize, pnet, rnet, onet, threshold, factor, image,
+        #                                                           detect_type, margin)
+        # detect_filepath =  os.path.join(detect_dir_path, filename)
+        # if aligned != None:
+        #     #cv2.imshow("Window", aligned);
+        #     #print("detect face from images {0}".format(detect_filepath))
+        #     cv2.imwrite(detect_filepath,aligned)
+        # else:
+        #     print("No detect face from images {0}".format(detect_filepath))
+        # #print("success")
+        print('Loading feature extraction model')
+        #self.feature_model_dir = 'model-r50-am-lfw' #'model-r34-amf'
+        #self.feature_model = self.pre_model_dir + self.feature_model_dir + '/' + 'model,0'
+        self.feature_model = '/home/dev/insta_crawling/align/models'+ '/' + 'model,0'
+        self.threshold = 1.24
+        self.image_size = '112,112'
+        self.model = self.feature_model
+
+        mtcnn_model = face_embedding.FaceModel(self)
+
+        #self.logger = logging.getLogger('myapp')
+        #hdlr = logging.FileHandler(self.log_dir + '/myface.log')
+        #formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        #hdlr.setFormatter(formatter)
+        #self.logger.addHandler(hdlr)
+        #self.logger.setLevel(logging.WARNING)
+
+        #if self.detect_type == 'mtcnn_caffe':
+        bbox, points = mtcnn_model.get_boxes(image)
+        boxes = [bbox]
+        box_color = (120, 160, 230)
+
+        draw_circle_flag = True
+        cv2.rectangle(image, (int(boxes[0][0]), int(boxes[0][1])), (int(boxes[0][2]), int(boxes[0][3])), box_color,
+                      1)
+        # # Point 눈위치
+        # if draw_circle_flag:
+        #     for i in range(5):
+        #         cv2.circle(image, (points[0][i], points[0][i + 5]), 1, (0, 0, 255), 2)
+        cv2.circle(image, (points[0][0], points[0][5]), 1, (0, 0, 255), 2) #왼쪽눈
+        cv2.circle(image, (points[0][1], points[0][6]), 1, (0, 0, 255), 2) #오른쪽 눈
+
+        #각도 구하기
+        dx = points[0][1] - points[0][0]
+        dy = points[0][6] - points[0][5]
+        nouse = (points[0][2] , points[0][7])
+        #double
+        rad = math.atan2(dy, dx);
+
+        degree = (rad * 180.0) / math.pi;
+
+        rotate = cv2.getRotationMatrix2D(nouse, degree, 1)  # 1? ??/??????.
+        r_images = cv2.warpAffine(image, rotate, (700,400))
+
+
+        #눈 그리고, 선 긋고, 수직선 긋고, 각도 재고, 돌리고, 눈을 특정 포인트로 이동하고, 잘라내고
+
+        #400, 700
+
+        #한번 더 태운다
+        bbox2, points2 = mtcnn_model.get_boxes(r_images)
+        boxes2 = [bbox]
+        box_color2 = (120-100, 160, 0)
+
+        cv2.rectangle(r_images, (int(boxes2[0][0]), int(boxes2[0][1])), (int(boxes2[0][2]), int(boxes2[0][3])), box_color2,
+                      1)
+        #         cv2.circle(image, (points[0][i], points[0][i + 5]), 1, (0, 0, 255), 2)
+        cv2.circle(r_images, (points2[0][0], points2[0][5]), 1, (0, 255, 0), 2) #왼쪽눈
+        cv2.circle(r_images, (points2[0][1], points2[0][6]), 1, (0, 255, 0), 2) #오른쪽 눈
+        cv2.circle(r_images, (points2[0][2], points2[0][7]), 1, (0, 255, 0), 2)  # 오른쪽 눈
+
+        cv2.imshow('img', r_images)
+
+        #warp = face_preprocess.preprocess(raw_filepath, bbox=boxes, landmark=points)
+        #preprocess
+        print('각도는??? {0}'.format(degree))
 
     def download_and_save(self, dir_prefix, query, crawl_type,id, pnet, rnet, onet):
         # Check if is hashtag
@@ -730,10 +835,10 @@ def main():
                         help='Number of detail posts to download: integer')
 
     args = parser.parse_args()
-
-    config = tf.ConfigProto(device_count={'GPU': 0})
-    sess =  tf.Session(config=config)
-    pnet, rnet, onet = detect_face.create_mtcnn(sess, None)
+    #
+    # config = tf.ConfigProto(device_count={'GPU': 0})
+    # sess =  tf.Session(config=config)
+    # pnet, rnet, onet = detect_face.create_mtcnn(sess, None)
         # frame, self.minsize, self.pnet, self.rnet, self.onet,self.threshold, self.factor
 
     #  End Argparse #
@@ -754,16 +859,16 @@ def main():
 
 #.scrape_photo_links(args.number) \
 
-    for _id  in load_master_data():
-        print('Detail save picture : {0}'.format(_id))
-        crawler.browse_target_page(_id) \
-               .scroll_to_num_of_posts(args.number_detail) \
-               .click_and_1080_images(args.number_detail) \
-               .download_and_save(args.dir_prefix,_id,args.dir_prefix,_id, pnet, rnet, onet) \
-               .save_after_crawling_master_data(_id)
-    # .scrape_photo_links(args.number_detail) \
-    sess.close()
-
+    # for _id  in load_master_data():
+    #     print('Detail save picture : {0}'.format(_id))
+    #     crawler.browse_target_page(_id) \
+    #            .scroll_to_num_of_posts(args.number_detail) \
+    #            .click_and_1080_images(args.number_detail) \
+    #            .download_and_save(args.dir_prefix,_id,args.dir_prefix,_id, pnet, rnet, onet) \
+    #            .save_after_crawling_master_data(_id)
+    # # .scrape_photo_links(args.number_detail) \
+    # sess.close()
+    crawler.insight_detect_face_from_image()
 
 if __name__ == "__main__":
     main()
